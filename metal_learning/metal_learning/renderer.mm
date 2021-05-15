@@ -42,7 +42,7 @@
         // Set a black clear color.
         view.clearColor = MTLClearColorMake(0, 0, 0, 1);
         // Indicate that each pixel in the depth buffer is a 32-bit floating point value.
-        view.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
+        view.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         view.clearDepth = 1.0;
         _texture0 = [self loadTextureFromFile:@"test.png"];
         _texture1 = [self loadTextureFromFile:@"test1.jpg"];
@@ -78,6 +78,7 @@
         renderPipelineDescriptor.fragmentFunction = fragFunction;
         renderPipelineDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat;
         renderPipelineDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat;
+        renderPipelineDescriptor.stencilAttachmentPixelFormat = view.depthStencilPixelFormat;
         _drawableRenderPipelineState = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
         NSAssert(_drawableRenderPipelineState, @"Failed to create pipeline state to render to screen: %@", error);
         
@@ -88,6 +89,7 @@
         renderPipelineDescriptor.fragmentFunction = fragFunction;
         renderPipelineDescriptor.colorAttachments[0].pixelFormat = _texture0.pixelFormat;
         renderPipelineDescriptor.depthAttachmentPixelFormat = MTLPixelFormatInvalid;
+        renderPipelineDescriptor.stencilAttachmentPixelFormat = MTLPixelFormatInvalid;
         _renderToTextureRenderPipeline = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
         NSAssert(_renderToTextureRenderPipeline, @"Failed to create pipeline state to render to texture: %@", error);
         
@@ -95,6 +97,14 @@
         MTLDepthStencilDescriptor* depthStencilDescriptor = [[MTLDepthStencilDescriptor alloc] init];
         depthStencilDescriptor.depthCompareFunction = MTLCompareFunctionLessEqual;
         depthStencilDescriptor.depthWriteEnabled = YES;
+        depthStencilDescriptor.frontFaceStencil.stencilCompareFunction = MTLCompareFunctionEqual;
+        depthStencilDescriptor.frontFaceStencil.stencilFailureOperation = MTLStencilOperationKeep;
+        depthStencilDescriptor.frontFaceStencil.depthFailureOperation = MTLStencilOperationIncrementClamp;
+        depthStencilDescriptor.frontFaceStencil.depthStencilPassOperation = MTLStencilOperationIncrementClamp;
+        depthStencilDescriptor.frontFaceStencil.readMask = 0x1;
+        depthStencilDescriptor.frontFaceStencil.writeMask = 0x1;
+        depthStencilDescriptor.backFaceStencil = nil;
+        
         _depthState = [_device newDepthStencilStateWithDescriptor:depthStencilDescriptor];
         _commandQueue = [_device newCommandQueue];
     }
@@ -122,6 +132,7 @@
         renderEncoder.label = @"renderEncoder";
         [renderEncoder setRenderPipelineState:_drawableRenderPipelineState];
         [renderEncoder setDepthStencilState:_depthState];
+        [renderEncoder setStencilReferenceValue:0x1];
         [renderEncoder setVertexBuffer:_vertices0 offset:0 atIndex:0];
         [renderEncoder setFragmentTexture:_texture0 atIndex:0];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
