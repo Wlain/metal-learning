@@ -16,7 +16,12 @@
     id<MTLDevice> _device;
     // The command Queue used to submit commands.
     id<MTLCommandQueue> _commandQueue;
-    id<MTLRenderPipelineState> _piplineState;
+    // Render pass descriptor to draw to the texture
+    MTLRenderPassDescriptor* _renderToTextureRenderPassDescriptor;
+    // A pipeline object to render to the offscreen texture.
+    id<MTLRenderPipelineState> _renderToTextureRenderPipeline;
+    // A pipeline object to render to the screen.
+    id<MTLRenderPipelineState> _drawableRenderPipelineState;
     // Combined depth and stencil state object.
     id<MTLDepthStencilState> _depthState;
     // The Metal buffer that holds the vertex data.
@@ -32,6 +37,7 @@
     self = [super init];
     if (self)
     {
+        NSError *error = nil;
         _device = view.device;
         // Set a black clear color.
         view.clearColor = MTLClearColorMake(0, 0, 0, 1);
@@ -54,23 +60,38 @@
         };
         _vertices0 = [_device newBufferWithBytes:vertexes0 length:sizeof(vertexes0) options:MTLResourceStorageModeShared];
         _vertices1 = [_device newBufferWithBytes:vertexes1 length:sizeof(vertexes1) options:MTLResourceStorageModeShared];
+        /// RenderPass：可以理解为framebuffer
+        _renderToTextureRenderPassDescriptor = [[MTLRenderPassDescriptor alloc] init];
+        _renderToTextureRenderPassDescriptor.colorAttachments[0].texture = _texture0;
+        _renderToTextureRenderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+        _renderToTextureRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        _renderToTextureRenderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
         /// load shader
         id<MTLLibrary> defaultLibrary = [_device newDefaultLibrary];
         id<MTLFunction> vertFunction = [defaultLibrary newFunctionWithName:@"vertShader"];
         id<MTLFunction> fragFunction = [defaultLibrary newFunctionWithName:@"fragShader"];
         MTLRenderPipelineDescriptor *renderPipelineDescriptor = [[MTLRenderPipelineDescriptor alloc] init];
-        renderPipelineDescriptor.label = @"myPipeline";
+        /// 绘制framebuffer
+        renderPipelineDescriptor.label = @"Drawable Render Pipeline";
         renderPipelineDescriptor.sampleCount = view.sampleCount;
         renderPipelineDescriptor.vertexFunction = vertFunction;
         renderPipelineDescriptor.fragmentFunction = fragFunction;
         renderPipelineDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat;
         renderPipelineDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat;
-        NSError *error = nil;
-        _piplineState = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
-        if (!_piplineState)
-        {
-            NSLog(@"create piplineState failed!");
-        }
+        _drawableRenderPipelineState = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
+        NSAssert(_drawableRenderPipelineState, @"Failed to create pipeline state to render to screen: %@", error);
+        
+        /// 离屏framebuffer
+        renderPipelineDescriptor.label = @"Offscreen Render Pipeline";
+        renderPipelineDescriptor.sampleCount = 1;
+        renderPipelineDescriptor.vertexFunction = vertFunction;
+        renderPipelineDescriptor.fragmentFunction = fragFunction;
+        renderPipelineDescriptor.colorAttachments[0].pixelFormat = _texture0.pixelFormat;
+        renderPipelineDescriptor.depthAttachmentPixelFormat = MTLPixelFormatInvalid;
+        _renderToTextureRenderPipeline = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
+        NSAssert(_renderToTextureRenderPipeline, @"Failed to create pipeline state to render to texture: %@", error);
+        
+        /// 深度模板
         MTLDepthStencilDescriptor* depthStencilDescriptor = [[MTLDepthStencilDescriptor alloc] init];
         depthStencilDescriptor.depthCompareFunction = MTLCompareFunctionLessEqual;
         depthStencilDescriptor.depthWriteEnabled = YES;
@@ -82,14 +103,24 @@
 
 - (void)drawInMTKView:(nonnull MTKView *)view
 {
-    id<MTLCommandBuffer> commanBuffer = [_commandQueue commandBuffer];
+    id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+    commandBuffer.label = @"Command Buffer";
+    {
+        id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:_renderToTextureRenderPassDescriptor];
+        renderEncoder.label = @"Offscreen Render Pass";
+        [renderEncoder setRenderPipelineState:_renderToTextureRenderPipeline];
+        [renderEncoder setVertexBuffer:_vertices1 offset:0 atIndex:0];
+        [renderEncoder setFragmentTexture:_texture1 atIndex:0];
+        [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+        [renderEncoder endEncoding];
+    }
     /// 渲染描述符
     MTLRenderPassDescriptor *renderPassDescriptor = view.currentRenderPassDescriptor;
     if (renderPassDescriptor != nil)
     {
-        id<MTLRenderCommandEncoder> renderEncoder = [commanBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+        id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
         renderEncoder.label = @"renderEncoder";
-        [renderEncoder setRenderPipelineState:_piplineState];
+        [renderEncoder setRenderPipelineState:_drawableRenderPipelineState];
         [renderEncoder setDepthStencilState:_depthState];
         [renderEncoder setVertexBuffer:_vertices0 offset:0 atIndex:0];
         [renderEncoder setFragmentTexture:_texture0 atIndex:0];
@@ -98,9 +129,9 @@
         [renderEncoder setFragmentTexture:_texture1 atIndex:0];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
         [renderEncoder endEncoding];
-        [commanBuffer presentDrawable:view.currentDrawable];
+        [commandBuffer presentDrawable:view.currentDrawable];
     }
-    [commanBuffer commit];
+    [commandBuffer commit];
 }
 
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
@@ -131,6 +162,7 @@
     UIImage* image = [UIImage imageNamed:path];
     MTLTextureDescriptor* textureDescriptor = [[MTLTextureDescriptor alloc] init];
     textureDescriptor.pixelFormat = MTLPixelFormatRGBA8Unorm;
+    textureDescriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     unsigned int width = image.size.width;
     unsigned int height = image.size.height;
     textureDescriptor.width = width;
