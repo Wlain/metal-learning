@@ -16,7 +16,7 @@ enum VertexAttribute
 
 typedef struct
 {
-    vector_float2 position;
+    vector_float3 position;
     vector_float2 textureCoordinate;
 } Vertex;
 

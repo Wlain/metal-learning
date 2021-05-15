@@ -20,7 +20,7 @@ typedef struct
 vertex RasterizerData vertShader(uint vertexID [[vertex_id]], constant Vertex* vertexArray [[buffer(0)]])
 {
     RasterizerData out;
-    float4 position = vector_float4(vertexArray[vertexID].position, 0.0f, 1.0f);
+    float4 position = vector_float4(vertexArray[vertexID].position, 1.0f);
     out.position = position;
     out.textureCoordinate = vertexArray[vertexID].textureCoordinate;
     return out;
