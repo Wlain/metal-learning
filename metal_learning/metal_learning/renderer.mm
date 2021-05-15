@@ -30,6 +30,10 @@
     // The Metal texture object
     id<MTLTexture> _texture0;
     id<MTLTexture> _texture1;
+    // Metal sampler object to be referenced via an argument buffer
+    id<MTLSamplerState> _sampler;
+    // Viewport to maintain 1:1 aspect ratio
+    MTLViewport _viewport;
 }
 
 - (id)initWithMetalKitView:(MTKView*) view
@@ -111,8 +115,18 @@
         depthStencilDescriptor.frontFaceStencil.readMask = 0x1;
         depthStencilDescriptor.frontFaceStencil.writeMask = 0x1;
         depthStencilDescriptor.backFaceStencil = nil;
-        
         _depthState = [_device newDepthStencilStateWithDescriptor:depthStencilDescriptor];
+        
+        // Create sampler to use for texturing
+        {
+            MTLSamplerDescriptor *samplerDesc = [MTLSamplerDescriptor new];
+            samplerDesc.minFilter = MTLSamplerMinMagFilterLinear;
+            samplerDesc.magFilter = MTLSamplerMinMagFilterLinear;
+            samplerDesc.mipFilter = MTLSamplerMipFilterNotMipmapped;
+            samplerDesc.normalizedCoordinates = YES;
+            samplerDesc.supportArgumentBuffers = YES;
+            _sampler = [_device newSamplerStateWithDescriptor:samplerDesc];
+        }
         _commandQueue = [_device newCommandQueue];
     }
     return self;
@@ -137,6 +151,7 @@
     {
         id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
         renderEncoder.label = @"renderEncoder";
+        [renderEncoder setViewport:_viewport];
         [renderEncoder setRenderPipelineState:_drawableRenderPipelineState];
         [renderEncoder setDepthStencilState:_depthState];
         [renderEncoder setStencilReferenceValue:0x0];
@@ -152,8 +167,21 @@
     [commandBuffer commit];
 }
 
-- (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
-    
+- (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size
+{
+    if(size.width < size.height) {
+        _viewport.originX = 0;
+        _viewport.originY = (size.height - size.width) / 2.0;;
+        _viewport.width = _viewport.height = size.width;
+        _viewport.zfar = 1.0;
+        _viewport.znear = -1.0;
+    } else {
+        _viewport.originX = (size.width - size.height) / 2.0;
+        _viewport.originY = 0;
+        _viewport.width = _viewport.height = size.height;
+        _viewport.zfar = 1.0;
+        _viewport.znear = -1.0;
+    }
 }
 
 // UIImage 中读取字节流
