@@ -77,6 +77,13 @@
         renderPipelineDescriptor.vertexFunction = vertFunction;
         renderPipelineDescriptor.fragmentFunction = fragFunction;
         renderPipelineDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat;
+        renderPipelineDescriptor.colorAttachments[0].blendingEnabled = YES;
+        renderPipelineDescriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        renderPipelineDescriptor.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        renderPipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceColor;
+        renderPipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorSourceAlpha;
+        renderPipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        renderPipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
         renderPipelineDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat;
         renderPipelineDescriptor.stencilAttachmentPixelFormat = view.depthStencilPixelFormat;
         _drawableRenderPipelineState = [_device newRenderPipelineStateWithDescriptor:renderPipelineDescriptor error:&error];
@@ -132,7 +139,7 @@
         renderEncoder.label = @"renderEncoder";
         [renderEncoder setRenderPipelineState:_drawableRenderPipelineState];
         [renderEncoder setDepthStencilState:_depthState];
-        [renderEncoder setStencilReferenceValue:0x1];
+        [renderEncoder setStencilReferenceValue:0x0];
         [renderEncoder setVertexBuffer:_vertices0 offset:0 atIndex:0];
         [renderEncoder setFragmentTexture:_texture0 atIndex:0];
         [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
@@ -186,7 +193,7 @@
         {width, height, 1}
     };
     unsigned char* imageBytes = [self readPixelsByUIImage:image];
-        // Copy the bytes from the data object into the texture
+    // Copy the bytes from the data object into the texture
     [texture replaceRegion:region mipmapLevel:0 withBytes:imageBytes bytesPerRow:bytesPerRow];
     return texture;
 }
