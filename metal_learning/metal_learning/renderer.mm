@@ -12,16 +12,16 @@
 
 @implementation Renderer
 {
+    // The device (aka GPU) used to render
     id<MTLDevice> _device;
+    // The command Queue used to submit commands.
     id<MTLCommandQueue> _commandQueue;
     id<MTLRenderPipelineState> _piplineState;
-    MTLVertexDescriptor *_mtlVertexDescriptor;
+    // The Metal buffer that holds the vertex data.
+    id<MTLBuffer> _vertices;
+    // The Metal texture object
+    id<MTLTexture> _texture;
 }
-
-static const Vertex s_vertexes[] = {
-    {{0, 0.5}},
-    {{0.5, -0.5}},
-    {{-0.5, -0.5}}};
 
 - (id)initWithMetalKitView:(MTKView*) view
 {
@@ -29,8 +29,14 @@ static const Vertex s_vertexes[] = {
     if (self)
     {
         _device = view.device;
-        view.colorPixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
-        view.sampleCount = 1;
+        _texture = [self loadTextureFromFile:@"test.png"];
+        static const Vertex vertexes[] = {
+            {{-0.5f, -0.5f}, {0.0f, 0.0f}},
+            {{-0.5f, 0.5f}, {0.0f, 1.0f}},
+            {{0.5f, -0.5f}, {1.0f, 0.0f}},
+            {{0.5f, 0.5f}, {1.0f, 1.0f}}
+        };
+        _vertices = [_device newBufferWithBytes:vertexes length:sizeof(vertexes) options:MTLResourceStorageModeShared];
         _commandQueue = [_device newCommandQueue];
         /// load shader
         id<MTLLibrary> defaultLibrary = [_device newDefaultLibrary];
@@ -63,8 +69,9 @@ static const Vertex s_vertexes[] = {
         id<MTLRenderCommandEncoder> renderEncoder = [commanBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
         renderEncoder.label = @"renderEncoder";
         [renderEncoder setRenderPipelineState:_piplineState];
-        [renderEncoder setVertexBytes:s_vertexes length:sizeof(s_vertexes) atIndex:0];
-        [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        [renderEncoder setVertexBuffer:_vertices offset:0 atIndex:0];
+        [renderEncoder setFragmentTexture:_texture atIndex:0];
+        [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
         [renderEncoder endEncoding];
         [commanBuffer presentDrawable:view.currentDrawable];
     }
@@ -73,6 +80,47 @@ static const Vertex s_vertexes[] = {
 
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
     
+}
+
+// UIImage 中读取字节流
+-(unsigned char*)readPixelsByUIImage:(UIImage*) image
+{
+    CGImageRef imageRef = image.CGImage;
+    size_t width = CGImageGetWidth(imageRef);
+    size_t height = CGImageGetHeight(imageRef);
+    size_t bytesPerRow = 4 * image.size.width;
+    unsigned char* imageData = (unsigned char*)malloc(bytesPerRow * height);
+    CGContextRef context = CGBitmapContextCreate(imageData, width, height, 8, bytesPerRow, CGImageGetColorSpace(imageRef), kCGImageAlphaPremultipliedLast);
+    CGRect rect = CGRectMake(0, 0, width, height);
+    CGContextTranslateCTM(context, rect.origin.x, rect.origin.y);
+    CGContextTranslateCTM(context, 0, rect.size.height);
+    CGContextScaleCTM(context, 1.0f, -1.0f);
+    CGContextTranslateCTM(context, -rect.origin.x, -rect.origin.y);
+    CGContextDrawImage(context, rect, imageRef);
+    CGContextRelease(context);
+    return imageData;
+}
+
+- (id<MTLTexture>)loadTextureFromFile:(NSString*) path
+{
+    UIImage* image = [UIImage imageNamed:path];
+    MTLTextureDescriptor* textureDescriptor = [[MTLTextureDescriptor alloc] init];
+    textureDescriptor.pixelFormat = MTLPixelFormatRGBA8Unorm;
+    unsigned int width = image.size.width;
+    unsigned int height = image.size.height;
+    textureDescriptor.width = width;
+    textureDescriptor.height = height;
+
+    id<MTLTexture> texture = [_device newTextureWithDescriptor:textureDescriptor];
+    size_t bytesPerRow = 4 * image.size.width;
+    MTLRegion region = {
+        {0, 0, 0},
+        {width, height, 1}
+    };
+    unsigned char* imageBytes = [self readPixelsByUIImage:image];
+        // Copy the bytes from the data object into the texture
+    [texture replaceRegion:region mipmapLevel:0 withBytes:imageBytes bytesPerRow:bytesPerRow];
+    return texture;
 }
 
 @end

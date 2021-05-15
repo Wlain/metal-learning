@@ -9,24 +9,29 @@
 #include "shaderTypes.h"
 using namespace metal;
 
+
+
 typedef struct
 {
     float4 position [[position]];
-    float2 texCoord;
-} ColorInOut;
+    float2 textureCoordinate;
+} RasterizerData;
 
-vertex ColorInOut vertShader(constant Vertex *vertexArr [[buffer(0)]],
-                               uint vid [[vertex_id]])
+vertex RasterizerData vertShader(uint vertexID [[vertex_id]], constant Vertex* vertexArray [[buffer(0)]])
 {
-    ColorInOut out;
-    float4 position = vector_float4(vertexArr[vid].position, 0 , 1.0);
+    RasterizerData out;
+    float4 position = vector_float4(vertexArray[vertexID].position, 0.0f, 1.0f);
     out.position = position;
+    out.textureCoordinate = vertexArray[vertexID].textureCoordinate;
     return out;
 }
 
-fragment float4 fragShader(ColorInOut in [[stage_in]])
+fragment float4 fragShader(RasterizerData in [[stage_in]], texture2d<half> colorTexture [[texture(0)]])
 {
-    return float4(1.0,0,0,0);
+    constexpr sampler textureSampler (mag_filter::linear,
+                                      min_filter::linear);
+    const half4 colorSample = colorTexture.sample(textureSampler, in.textureCoordinate);
+    return float4(colorSample);
 }
 
 
